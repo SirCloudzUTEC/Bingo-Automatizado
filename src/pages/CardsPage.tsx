@@ -6,7 +6,7 @@ import { THEMES } from '../lib/themes'
 import { useBingoStore } from '../store/useBingoStore'
 
 export function CardsPage() {
-  const { cards, removeCard, duplicateCard, round } = useBingoStore()
+  const { cards, removeCard, round } = useBingoStore()
   const navigate = useNavigate()
 
   return (
@@ -57,7 +57,7 @@ export function CardsPage() {
                   <Button size="sm" onClick={() => navigate(`/card/${card.id}`)}>
                     Editar
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => duplicateCard(card.id)}>
+                  <Button size="sm" variant="ghost" onClick={() => navigate(`/card/new?from=${card.id}`)}>
                     Duplicar
                   </Button>
                   <div className="flex-1" />

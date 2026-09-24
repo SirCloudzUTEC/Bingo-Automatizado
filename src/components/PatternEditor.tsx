@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { canSavePattern } from '../lib/guards'
+import type { Pattern } from '../types'
 import { CENTER, emptyMask } from '../lib/patterns'
 import { PatternPreview } from './PatternPreview'
 import { Button } from './ui'
@@ -6,20 +8,26 @@ import { Button } from './ui'
 type Props = {
   initialName?: string
   initialMask?: boolean[]
-  onSave: (name: string, mask: boolean[]) => void
+  /** todas las figuras existentes, para evitar nombres repetidos */
+  patterns: Pattern[]
+  editingId?: string
+  /** devuelve un motivo si el store rechaza el guardado */
+  onSave: (name: string, mask: boolean[]) => string | void
   onCancel: () => void
 }
 
-export function PatternEditor({ initialName = '', initialMask, onSave, onCancel }: Props) {
+export function PatternEditor({ initialName = '', initialMask, patterns, editingId, onSave, onCancel }: Props) {
   const [name, setName] = useState(initialName)
   const [mask, setMask] = useState(() => initialMask ?? emptyMask())
+  const [saveError, setSaveError] = useState<string | null>(null)
   const count = mask.filter(Boolean).length
+  const check = canSavePattern(name, mask, patterns, editingId)
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        if (name.trim() && count > 0) onSave(name.trim(), mask)
+        if (check.ok) setSaveError(onSave(name.trim(), mask) || null)
       }}
     >
       <input
@@ -42,11 +50,13 @@ export function PatternEditor({ initialName = '', initialMask, onSave, onCancel 
           Limpiar
         </button>
       </div>
+      {!check.ok && (name.trim() || count > 0) && <p className="text-sm text-amber-500">⚠ {check.reason}</p>}
+      {saveError && <p className="text-sm text-red-500">No se pudo guardar: {saveError}</p>}
       <div className="flex gap-2">
         <Button type="button" variant="ghost" className="flex-1" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" variant="primary" className="flex-[2]" disabled={!name.trim() || count === 0}>
+        <Button type="submit" variant="primary" className="flex-[2]" disabled={!check.ok}>
           Guardar figura
         </Button>
       </div>

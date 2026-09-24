@@ -9,7 +9,8 @@ import { NumberPad } from '../components/NumberPad'
 import { PatternPreview } from '../components/PatternPreview'
 import { Button, Modal } from '../components/ui'
 import { buildIndex, evaluateAll, evaluateCard, hitsForNumber } from '../lib/bingo'
-import { BUILTIN_PATTERNS, MAX_NUMBER } from '../lib/patterns'
+import { canCall } from '../lib/guards'
+import { BUILTIN_PATTERNS } from '../lib/patterns'
 import { THEMES, nextTheme } from '../lib/themes'
 import { useBingoStore, usePattern } from '../store/useBingoStore'
 import type { Card } from '../types'
@@ -18,11 +19,14 @@ type Toast = { id: number; tone: 'hit' | 'miss' | 'warn' | 'win'; title: string;
 
 export function PlayPage() {
   const { cards, round, callNumber, undoLast, uncall, saveCard } = useBingoStore()
-  const pattern = usePattern(round?.patternId) ?? BUILTIN_PATTERNS[0]
+  const roundPattern = usePattern(round?.patternId)
+  // solo como respaldo para los hooks; si la figura no existe se redirige más abajo
+  const pattern = roundPattern ?? BUILTIN_PATTERNS[0]
   const navigate = useNavigate()
   const [buffer, setBuffer] = useState('')
   const [toast, setToast] = useState<Toast | null>(null)
   const [editing, setEditing] = useState<Card | 'new' | null>(null)
+  const [padCollapsed, setPadCollapsed] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const called = round?.called ?? []
@@ -56,31 +60,35 @@ export function PlayPage() {
   const call = useCallback(
     (n: number) => {
       setBuffer('')
-      if (!Number.isInteger(n) || n < 1 || n > MAX_NUMBER) return show({ tone: 'warn', title: `Número inválido`, detail: `Debe estar entre 1 y ${MAX_NUMBER}` })
-      if (!callNumber(n)) return show({ tone: 'warn', title: `${n} ya fue cantado` })
+      // validación en la UI y de nuevo dentro del store
+      const check = canCall(n, round, cards)
+      const res = check.ok ? callNumber(n) : check
+      if (!res.ok) return show({ tone: 'warn', title: 'No se puede cantar', detail: res.reason })
       const hits = hitsForNumber(index, pattern, n)
       const inside = hits.filter((h) => h.inPattern)
       const names = [...new Set(inside.map((h) => cardsById.get(h.cardId)?.name))]
       if (inside.length) show({ tone: 'hit', title: `${n} ✓ en ${names.length} cartilla${names.length > 1 ? 's' : ''}`, detail: names.join(', ') })
       else show({ tone: 'miss', title: `${n}`, detail: hits.length ? `Está en ${hits.length} cartilla(s), pero fuera de la ${pattern.name}` : 'No aparece en ninguna cartilla' })
     },
-    [callNumber, index, pattern, cardsById, show],
+    [round, cards, callNumber, index, pattern, cardsById, show],
   )
 
   const submit = useCallback(() => buffer && call(Number(buffer)), [buffer, call])
+  const noCards = cards.length === 0
 
-  if (!round) return <Navigate to="/letter" replace />
+  if (!round || !roundPattern) return <Navigate to="/letter" replace />
 
   const onSaveCard = (draft: Omit<Card, 'id' | 'createdAt'>) => {
-    const id = saveCard(draft, editing !== 'new' ? editing?.id : undefined)
+    const res = saveCard(draft, editing !== 'new' ? editing?.id : undefined)
+    if (!res.ok) return res.reason
     setEditing(null)
-    const ev = evaluateCard({ ...draft, id, createdAt: 0 }, pattern, calledSet)
+    const ev = evaluateCard({ ...draft, id: res.id, createdAt: 0 }, pattern, calledSet)
     if (!ev.complete)
       show({ tone: 'hit', title: `${draft.name} guardada`, detail: `Ya tiene ${ev.marked.length}/${ev.total} de la ${pattern.name} con el historial` })
   }
 
   return (
-    <main className="grid gap-5 pb-4 lg:grid-cols-[340px_1fr] lg:items-start">
+    <main className={`grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start lg:pb-4 ${padCollapsed ? 'pb-28' : 'pb-80'}`}>
       {/* Panel de control */}
       <aside className="flex flex-col gap-4 lg:sticky lg:top-20">
         <div className="flex items-center gap-3 rounded-3xl bg-surface p-4 shadow-sm ring-1 ring-line">
@@ -96,9 +104,26 @@ export function PlayPage() {
           </Button>
         </div>
 
-        <div className="order-last rounded-3xl bg-surface p-4 shadow-sm ring-1 ring-line lg:order-none">
-          <NumberPad value={buffer} onChange={setBuffer} onSubmit={submit} captureKeys={editing == null} />
-          <div className="mt-2 flex gap-2">
+        {/* móvil: panel fijo inferior · escritorio: tarjeta en la barra lateral */}
+        <div className="fixed inset-x-0 bottom-0 z-30 rounded-t-3xl border-t border-line bg-surface/95 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-[0_-8px_30px_rgba(0,0,0,0.15)] backdrop-blur lg:static lg:rounded-3xl lg:border-0 lg:bg-surface lg:p-4 lg:shadow-sm lg:ring-1 lg:ring-line">
+          {noCards && (
+            <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-400/15 px-3 py-2 text-sm">
+              <p className="flex-1 font-medium text-amber-600 dark:text-amber-400">⚠ Agrega una cartilla para poder cantar números</p>
+              <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
+                + Cartilla
+              </Button>
+            </div>
+          )}
+          <NumberPad
+            value={buffer}
+            onChange={setBuffer}
+            onSubmit={submit}
+            disabled={noCards}
+            captureKeys={editing == null && !noCards}
+            collapsed={padCollapsed}
+            onToggleCollapsed={() => setPadCollapsed((c) => !c)}
+          />
+          <div className={`mt-2 gap-2 ${padCollapsed ? 'hidden lg:flex' : 'flex'}`}>
             <Button
               size="sm"
               variant="ghost"
@@ -115,7 +140,7 @@ export function PlayPage() {
         </div>
 
         <div className="rounded-3xl bg-surface p-4 shadow-sm ring-1 ring-line">
-          <CalledHistory called={called} relevant={relevant} onRemove={uncall} onCall={call} />
+          <CalledHistory called={called} relevant={relevant} onRemove={uncall} onCall={call} disabled={noCards} />
         </div>
       </aside>
 
@@ -140,7 +165,7 @@ export function PlayPage() {
           </button>
         )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-3">
           {evals.map((ev) => {
             const card = cardsById.get(ev.cardId)!
             const t = THEMES[card.theme]
@@ -150,11 +175,11 @@ export function PlayPage() {
                 key={card.id}
                 layout
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                className={`relative flex flex-col gap-3 rounded-3xl bg-surface p-3 shadow-sm ring-2 sm:p-4 ${ev.complete ? 'ring-hit shadow-lg shadow-hit/20' : 'ring-line'}`}
+                className={`relative flex flex-col gap-3 rounded-3xl bg-surface p-3 shadow-sm ring-2 sm:p-4 max-sm:gap-2 max-sm:rounded-2xl max-sm:p-2 ${ev.complete ? 'ring-hit shadow-lg shadow-hit/20' : 'ring-line'}`}
               >
                 <div className="flex items-center gap-2">
                   <span className={`size-3 shrink-0 rounded-full ${t.swatch}`} />
-                  <h3 className="flex-1 truncate font-display text-lg font-semibold">{card.name}</h3>
+                  <h3 className="flex-1 truncate font-display text-sm font-semibold sm:text-lg">{card.name}</h3>
                   <button onClick={() => setEditing(card)} className="rounded-lg px-2 py-1 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink">
                     Editar
                   </button>
@@ -168,9 +193,9 @@ export function PlayPage() {
                     />
                   </div>
                   {ev.complete ? (
-                    <p className="text-center font-display text-2xl font-bold text-hit">¡BINGO! 🎉</p>
+                    <p className="text-center font-display text-lg font-bold text-hit sm:text-2xl">¡BINGO! 🎉</p>
                   ) : (
-                    <p className="text-sm">
+                    <p className="text-xs sm:text-sm">
                       <span className="font-semibold">
                         Faltan {left}
                       </span>
@@ -218,6 +243,7 @@ export function PlayPage() {
         {editing != null && (
           <CardEditor
             initial={editing === 'new' ? undefined : editing}
+            editingId={editing === 'new' ? undefined : editing.id}
             defaultName={`Cartilla ${cards.length + 1}`}
             defaultTheme={nextTheme(cards.length)}
             onCancel={() => setEditing(null)}

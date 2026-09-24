@@ -8,9 +8,11 @@ type Props = {
   relevant: Set<number>
   onRemove: (n: number) => void
   onCall: (n: number) => void
+  /** bloquea cantar desde el tablero (p. ej. sin cartillas) */
+  disabled?: boolean
 }
 
-export function CalledHistory({ called, relevant, onRemove, onCall }: Props) {
+export function CalledHistory({ called, relevant, onRemove, onCall, disabled }: Props) {
   const [armed, setArmed] = useState<number | null>(null)
   const [board, setBoard] = useState(false)
   const calledSet = new Set(called)
@@ -62,10 +64,10 @@ export function CalledHistory({ called, relevant, onRemove, onCall }: Props) {
           {Array.from({ length: MAX_NUMBER }, (_, i) => i + 1).map((n) => (
             <button
               key={n}
-              disabled={calledSet.has(n)}
+              disabled={disabled || calledSet.has(n)}
               onClick={() => onCall(n)}
               className={`tabular aspect-square rounded-md text-xs font-semibold transition ${
-                calledSet.has(n) ? 'bg-brand text-white' : 'bg-surface-2 text-muted hover:bg-line hover:text-ink'
+                calledSet.has(n) ? 'bg-brand text-white' : 'bg-surface-2 text-muted enabled:hover:bg-line enabled:hover:text-ink disabled:opacity-40'
               }`}
             >
               {n}

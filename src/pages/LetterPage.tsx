@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { PatternEditor } from '../components/PatternEditor'
 import { PatternPreview } from '../components/PatternPreview'
 import { Button, ConfirmButton, Modal } from '../components/ui'
+import { canRemovePattern, canStartRound } from '../lib/guards'
 import type { Pattern } from '../types'
 import { allPatterns, useBingoStore } from '../store/useBingoStore'
 
@@ -12,10 +13,14 @@ export function LetterPage() {
   const patterns = allPatterns(customPatterns)
   const [selected, setSelected] = useState(round?.patternId ?? 'U')
   const [editing, setEditing] = useState<Pattern | 'new' | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+  const selectedPattern = patterns.find((p) => p.id === selected)
+  const startCheck = canStartRound(selectedPattern, cards)
 
   const start = () => {
-    startRound(selected)
+    const res = startRound(selected)
+    if (!res.ok) return setError(res.reason)
     navigate('/play')
   }
 
@@ -33,8 +38,11 @@ export function LetterPage() {
             <motion.button
               key={p.id}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setSelected(p.id)}
-              onDoubleClick={start}
+              onClick={() => {
+                setSelected(p.id)
+                setError(null)
+              }}
+              onDoubleClick={() => startCheck.ok && start()}
               aria-pressed={active}
               className={`group relative flex flex-col items-center gap-3 rounded-3xl bg-surface p-4 shadow-sm ring-2 transition ${active ? 'ring-brand' : 'ring-transparent hover:ring-line'}`}
             >
@@ -68,10 +76,20 @@ export function LetterPage() {
       </div>
 
       <div className="sticky bottom-4 flex flex-col items-center gap-2">
-        {cards.length === 0 && <p className="text-sm text-muted">Aún no hay cartillas: puedes agregarlas durante la ronda.</p>}
+        {!startCheck.ok && (
+          <div className="flex flex-col items-center gap-2 rounded-2xl bg-amber-400/15 px-4 py-3 text-center text-sm">
+            <p className="font-medium text-amber-600 dark:text-amber-400">⚠ {startCheck.reason}</p>
+            {cards.length === 0 && (
+              <Button size="sm" variant="primary" onClick={() => navigate('/card/new')}>
+                + Agregar cartilla
+              </Button>
+            )}
+          </div>
+        )}
+        {error && startCheck.ok && <p className="text-sm text-red-500">{error}</p>}
         {round && <p className="text-sm text-muted">Hay una ronda en curso con {round.called.length} números; empezar otra reinicia el historial.</p>}
-        <Button variant="primary" size="lg" className="w-full max-w-sm" onClick={start}>
-          {round ? 'Empezar nueva ronda' : 'Empezar ronda'} con “{patterns.find((p) => p.id === selected)?.name}”
+        <Button variant="primary" size="lg" className="w-full max-w-sm" onClick={start} disabled={!startCheck.ok}>
+          {round ? 'Empezar nueva ronda' : 'Empezar ronda'} con “{selectedPattern?.name ?? '—'}”
         </Button>
         {round && (
           <Button variant="ghost" size="sm" onClick={() => navigate('/play')}>
@@ -86,18 +104,21 @@ export function LetterPage() {
             <PatternEditor
               initialName={editing === 'new' ? '' : editing.name}
               initialMask={editing === 'new' ? undefined : editing.mask}
+              patterns={patterns}
+              editingId={editing === 'new' ? undefined : editing.id}
               onCancel={() => setEditing(null)}
               onSave={(name, mask) => {
-                const id = savePattern(name, mask, editing === 'new' ? undefined : editing.id)
-                setSelected(id)
+                const res = savePattern(name, mask, editing === 'new' ? undefined : editing.id)
+                if (!res.ok) return res.reason
+                setSelected(res.id)
                 setEditing(null)
               }}
             />
-            {editing !== 'new' && round?.patternId !== editing.id && (
+            {editing !== 'new' && canRemovePattern(editing, round).ok && (
               <div className="mt-3 flex justify-center">
                 <ConfirmButton
                   onConfirm={() => {
-                    removePattern(editing.id)
+                    if (!removePattern(editing.id).ok) return
                     if (selected === editing.id) setSelected('U')
                     setEditing(null)
                   }}

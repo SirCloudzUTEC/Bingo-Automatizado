@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CardEditor } from '../components/CardEditor'
 import { nextTheme } from '../lib/themes'
 import { useBingoStore } from '../store/useBingoStore'
@@ -10,6 +10,10 @@ export function CardEditPage() {
   const saveCard = useBingoStore((s) => s.saveCard)
   const existing = cards.find((c) => c.id === id)
   const isNew = !existing
+  // duplicar = nueva cartilla precargada; no se guarda nada hasta que el usuario confirme
+  const [params] = useSearchParams()
+  const source = isNew ? cards.find((c) => c.id === params.get('from')) : undefined
+  const initial = existing ?? (source && { name: `${source.name} (copia)`, theme: source.theme, cells: source.cells.map((c) => ({ ...c })) })
 
   return (
     <main className="mx-auto w-full max-w-lg">
@@ -19,13 +23,15 @@ export function CardEditPage() {
       </p>
       <div className="rounded-3xl bg-surface p-4 shadow-sm ring-1 ring-line sm:p-6">
         <CardEditor
-          key={id}
-          initial={existing}
+          key={`${id}-${source?.id ?? ''}`}
+          initial={initial}
+          editingId={existing?.id}
           defaultName={`Cartilla ${cards.length + 1}`}
           defaultTheme={nextTheme(cards.length)}
           onCancel={() => navigate('/')}
           onSave={(draft) => {
-            saveCard(draft, existing?.id)
+            const res = saveCard(draft, existing?.id)
+            if (!res.ok) return res.reason
             navigate('/')
           }}
         />

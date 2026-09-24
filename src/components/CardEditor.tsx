@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import type { Card, CardTheme, Cell } from '../types'
-import { emptyCells, isCardValid, validateCard } from '../lib/bingo'
+import { emptyCells, validateCard } from '../lib/bingo'
+import { canSaveCard } from '../lib/guards'
+import { useBingoStore } from '../store/useBingoStore'
 import { parseNumbers, type ParseOrder } from '../lib/parse'
 import { CELLS, CENTER, HEADERS, MAX_NUMBER, SIZE } from '../lib/patterns'
 import { THEMES, THEME_KEYS } from '../lib/themes'
@@ -10,9 +12,12 @@ export type CardDraft = Omit<Card, 'id' | 'createdAt'>
 
 type Props = {
   initial?: CardDraft
+  /** id de la cartilla que se edita, para no compararla consigo misma */
+  editingId?: string
   defaultName: string
   defaultTheme: CardTheme
-  onSave: (draft: CardDraft) => void
+  /** devuelve un motivo si el store rechaza el guardado */
+  onSave: (draft: CardDraft) => string | void
   onCancel: () => void
 }
 
@@ -20,19 +25,23 @@ type Props = {
 const orderOf = (o: ParseOrder) =>
   Array.from({ length: CELLS }, (_, k) => (o === 'rows' ? k : (k % SIZE) * SIZE + Math.floor(k / SIZE)))
 
-export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCancel }: Props) {
+export function CardEditor({ initial, editingId, defaultName, defaultTheme, onSave, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? defaultName)
   const [theme, setTheme] = useState<CardTheme>(initial?.theme ?? defaultTheme)
   const [cells, setCells] = useState<Cell[]>(() => initial?.cells.map((c) => ({ ...c })) ?? emptyCells(true))
   const [order, setOrder] = useState<ParseOrder>('columns')
   const [bulk, setBulk] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const cards = useBingoStore((s) => s.cards)
   const inputs = useRef<(HTMLInputElement | null)[]>([])
   // evita doble salto si tras un auto-avance se pulsa espacio/Enter como separador
   const autoAdvanced = useRef(false)
 
   const freeCenter = !!cells[CENTER].free
   const issues = useMemo(() => validateCard(cells), [cells])
-  const valid = isCardValid(cells)
+  const check = useMemo(() => canSaveCard(cells, cards, editingId), [cells, cards, editingId])
+  const valid = check.ok
+  const twinWarning = !check.ok && issues.empty.length === 0 && issues.duplicates.size === 0 && issues.outOfRange.length === 0 ? check.reason : null
   const filled = cells.filter((c) => c.free || c.value != null).length
   const seq = useMemo(() => orderOf(order).filter((i) => !cells[i].free), [order, cells])
 
@@ -127,7 +136,9 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        if (valid) onSave({ name: name.trim() || defaultName, theme, cells })
+        if (!valid) return
+        const error = onSave({ name: name.trim() || defaultName, theme, cells })
+        setSaveError(error || null)
       }}
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -136,7 +147,7 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
           onChange={(e) => setName(e.target.value)}
           placeholder="Nombre de la cartilla"
           aria-label="Nombre de la cartilla"
-          className="h-10 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 font-semibold outline-none focus:border-brand"
+          className="h-10 min-w-0 basis-full rounded-xl border sm:flex-1 sm:basis-0 border-line bg-surface px-3 font-semibold outline-none focus:border-brand"
         />
         <div className="flex gap-1.5" role="radiogroup" aria-label="Diseño">
           {THEME_KEYS.map((k) => (
@@ -254,7 +265,9 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
             {filled}/{CELLS} celdas completas
           </p>
         )}
-        {valid && <p className="text-hit">✓ Cartilla lista</p>}
+        {twinWarning && <p className="text-amber-500">⚠ {twinWarning}</p>}
+        {saveError && <p className="text-red-500">No se pudo guardar: {saveError}</p>}
+        {valid && !saveError && <p className="text-hit">✓ Cartilla lista</p>}
       </div>
 
       <div className="flex gap-2">

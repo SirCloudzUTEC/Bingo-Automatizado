@@ -15,11 +15,11 @@ type Props = {
 
 export const CardGrid = memo(function CardGrid({ card, mask, called, lastCalled, compact }: Props) {
   const t = THEMES[card.theme]
-  const text = compact ? 'text-sm sm:text-base' : 'text-lg sm:text-xl'
+  const text = compact ? 'text-xs min-[380px]:text-sm sm:text-base' : 'text-lg sm:text-xl'
   return (
-    <div className="grid grid-cols-5 gap-1">
+    <div className={`grid grid-cols-5 ${compact ? 'gap-0.5 sm:gap-1' : 'gap-1'}`}>
       {HEADERS.map((h) => (
-        <div key={h} className={`rounded-md py-0.5 text-center font-display font-bold ${t.header} ${compact ? 'text-xs' : 'text-sm'}`}>
+        <div key={h} className={`rounded-md py-0.5 text-center leading-tight font-display font-bold ${t.header} ${compact ? 'text-xs' : 'text-sm'}`}>
           {h}
         </div>
       ))}
