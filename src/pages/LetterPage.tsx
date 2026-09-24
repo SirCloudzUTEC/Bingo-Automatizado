@@ -5,6 +5,7 @@ import { PatternEditor } from '../components/PatternEditor'
 import { PatternPreview } from '../components/PatternPreview'
 import { Button, ConfirmButton, Modal } from '../components/ui'
 import { canRemovePattern, canStartRound } from '../lib/guards'
+import { formatPrize } from '../lib/patterns'
 import type { Pattern } from '../types'
 import { allPatterns, useBingoStore } from '../store/useBingoStore'
 
@@ -46,10 +47,13 @@ export function LetterPage() {
               aria-pressed={active}
               className={`group relative flex flex-col items-center gap-3 rounded-3xl bg-surface p-4 shadow-sm ring-2 transition ${active ? 'ring-brand' : 'ring-transparent hover:ring-line'}`}
             >
-              <span className={`font-display text-4xl font-bold ${active ? 'text-brand' : ''}`}>{p.name}</span>
+              <span className={`font-display font-bold ${p.name.length > 3 ? 'text-3xl leading-10' : 'text-4xl'} ${active ? 'text-brand' : ''}`}>{p.name}</span>
               <div className="w-full max-w-28">
                 <PatternPreview mask={p.mask} />
               </div>
+              {p.prize != null && (
+                <span className="tabular rounded-full bg-hit/15 px-3 py-1 font-display text-lg font-bold text-hit">{formatPrize(p.prize)}</span>
+              )}
               {!p.builtin && (
                 <span
                   role="button"

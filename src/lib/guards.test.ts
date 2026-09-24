@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Card, Cell, Round } from '../types'
 import { canCall, canRemovePattern, canSaveCard, canSavePattern, canStartRound, sanitizeState } from './guards'
-import { BUILTIN_PATTERNS, CENTER } from './patterns'
+import { BUILTIN_PATTERNS, CENTER, DEFAULT_COLUMN_RULE } from './patterns'
 
 const cells = (offset = 0): Cell[] => Array.from({ length: 25 }, (_, i) => (i === CENTER ? { value: null, free: true } : { value: i + 1 + offset }))
 const card = (id: string, offset = 0): Card => ({ id, name: id, theme: 'sky', createdAt: 0, cells: cells(offset) })
@@ -66,6 +66,12 @@ describe('sanitizeState', () => {
     expect(s.cards.map((c) => c.id)).toEqual(['a'])
     expect(s.customPatterns).toEqual([])
     expect(s.round?.called).toEqual([3, 7])
+  })
+  it('usa la regla de columnas por defecto si falta o está corrupta', () => {
+    expect(sanitizeState({}, BUILTIN_PATTERNS).columnRule).toEqual(DEFAULT_COLUMN_RULE)
+    expect(sanitizeState({ columnRule: { enabled: true, ranges: [[1, 50]] } }, BUILTIN_PATTERNS).columnRule).toEqual(DEFAULT_COLUMN_RULE)
+    const off = { ...DEFAULT_COLUMN_RULE, enabled: false }
+    expect(sanitizeState({ columnRule: off }, BUILTIN_PATTERNS).columnRule).toEqual(off)
   })
   it('descarta la ronda si su figura ya no existe', () => {
     expect(sanitizeState({ round: { ...round(), patternId: 'gone' } }, BUILTIN_PATTERNS).round).toBeNull()

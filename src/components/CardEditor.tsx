@@ -33,15 +33,18 @@ export function CardEditor({ initial, editingId, defaultName, defaultTheme, onSa
   const [bulk, setBulk] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const cards = useBingoStore((s) => s.cards)
+  const rule = useBingoStore((s) => s.columnRule)
   const inputs = useRef<(HTMLInputElement | null)[]>([])
   // evita doble salto si tras un auto-avance se pulsa espacio/Enter como separador
   const autoAdvanced = useRef(false)
 
   const freeCenter = !!cells[CENTER].free
-  const issues = useMemo(() => validateCard(cells), [cells])
-  const check = useMemo(() => canSaveCard(cells, cards, editingId), [cells, cards, editingId])
+  const issues = useMemo(() => validateCard(cells, rule), [cells, rule])
+  const check = useMemo(() => canSaveCard(cells, cards, editingId, rule), [cells, cards, editingId, rule])
   const valid = check.ok
-  const twinWarning = !check.ok && issues.empty.length === 0 && issues.duplicates.size === 0 && issues.outOfRange.length === 0 ? check.reason : null
+  const hasIssues = issues.empty.length > 0 || issues.duplicates.size > 0 || issues.outOfRange.length > 0 || issues.wrongColumn.length > 0
+  const twinWarning = !check.ok && !hasIssues ? check.reason : null
+  const wrongCols = [...new Set(issues.wrongColumn.map((i) => i % SIZE))].sort()
   const filled = cells.filter((c) => c.free || c.value != null).length
   const seq = useMemo(() => orderOf(order).filter((i) => !cells[i].free), [order, cells])
 
@@ -166,9 +169,14 @@ export function CardEditor({ initial, editingId, defaultName, defaultTheme, onSa
 
       <div className={`mx-auto w-full max-w-sm rounded-2xl p-2 ring-2 ${t.ring} ${t.soft}`}>
         <div className="grid grid-cols-5 gap-1.5">
-          {HEADERS.map((h) => (
-            <div key={h} className={`rounded-lg py-1 text-center font-display text-lg font-bold ${t.header}`}>
-              {h}
+          {HEADERS.map((h, c) => (
+            <div key={h} className={`flex flex-col items-center rounded-lg py-1 font-display leading-none ${t.header}`}>
+              <span className="text-lg font-bold">{h}</span>
+              {rule.enabled && (
+                <span className="tabular mt-0.5 text-[10px] font-semibold opacity-80 sm:text-xs">
+                  {rule.ranges[c][0]}–{rule.ranges[c][1]}
+                </span>
+              )}
             </div>
           ))}
           {cells.map((cell, i) =>
@@ -198,7 +206,7 @@ export function CardEditor({ initial, editingId, defaultName, defaultTheme, onSa
                 autoComplete="off"
                 aria-label={`${HEADERS[i % SIZE]} fila ${Math.floor(i / SIZE) + 1}`}
                 className={`tabular aspect-square w-full min-w-0 rounded-lg border-2 bg-surface text-center text-xl font-semibold outline-none transition focus:scale-105 focus:border-brand ${
-                  cell.value != null && (issues.duplicates.has(cell.value) || issues.outOfRange.includes(i))
+                  cell.value != null && (issues.duplicates.has(cell.value) || issues.outOfRange.includes(i) || issues.wrongColumn.includes(i))
                     ? 'border-red-500 bg-red-500/10 text-red-600'
                     : 'border-transparent'
                 }`}
@@ -265,6 +273,11 @@ export function CardEditor({ initial, editingId, defaultName, defaultTheme, onSa
             {filled}/{CELLS} celdas completas
           </p>
         )}
+        {wrongCols.map((c) => (
+          <p key={c} className="text-red-500">
+            La columna {HEADERS[c]} solo admite del {rule.ranges[c][0]} al {rule.ranges[c][1]}
+          </p>
+        ))}
         {twinWarning && <p className="text-amber-500">⚠ {twinWarning}</p>}
         {saveError && <p className="text-red-500">No se pudo guardar: {saveError}</p>}
         {valid && !saveError && <p className="text-hit">✓ Cartilla lista</p>}

@@ -1,12 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
 import { CardGrid } from '../components/CardGrid'
+import { ColumnRulePanel } from '../components/ColumnRule'
 import { Button, ConfirmButton } from '../components/ui'
+import { breaksColumnRule } from '../lib/bingo'
 import { THEMES } from '../lib/themes'
 import { useBingoStore } from '../store/useBingoStore'
 
 export function CardsPage() {
-  const { cards, removeCard, round } = useBingoStore()
+  const { cards, removeCard, round, columnRule } = useBingoStore()
   const navigate = useNavigate()
 
   return (
@@ -25,6 +27,8 @@ export function CardsPage() {
           )}
         </div>
       </section>
+
+      <ColumnRulePanel />
 
       {cards.length === 0 ? (
         <button
@@ -49,6 +53,11 @@ export function CardsPage() {
                 <div className="flex items-center gap-2">
                   <span className={`size-3 rounded-full ${THEMES[card.theme].swatch}`} />
                   <h2 className="flex-1 truncate font-display text-lg font-semibold">{card.name}</h2>
+                  {breaksColumnRule(card.cells, columnRule) && (
+                    <span className="shrink-0 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400" title="Tiene números fuera del rango de su columna">
+                      ⚠ No cumple la regla
+                    </span>
+                  )}
                 </div>
                 <Link to={`/card/${card.id}`} aria-label={`Editar ${card.name}`}>
                   <CardGrid card={card} compact />

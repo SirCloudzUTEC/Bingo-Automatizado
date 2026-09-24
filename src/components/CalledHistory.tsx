@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
+import { columnForNumber } from '../lib/bingo'
 import { MAX_NUMBER } from '../lib/patterns'
+import { useBingoStore } from '../store/useBingoStore'
 
 type Props = {
   called: number[]
@@ -15,6 +17,10 @@ type Props = {
 export function CalledHistory({ called, relevant, onRemove, onCall, disabled }: Props) {
   const [armed, setArmed] = useState<number | null>(null)
   const [board, setBoard] = useState(false)
+  const rule = useBingoStore((s) => s.columnRule)
+  // con la regla activa el tablero llega hasta el mayor número permitido
+  const max = rule.enabled ? Math.max(...rule.ranges.map((r) => r[1])) : MAX_NUMBER
+  const allowed = (n: number) => !rule.enabled || columnForNumber(n, rule) !== -1
   const calledSet = new Set(called)
   const recentFirst = [...called].reverse()
 
@@ -23,7 +29,7 @@ export function CalledHistory({ called, relevant, onRemove, onCall, disabled }: 
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-muted">Historial · {called.length}</h3>
         <button onClick={() => setBoard((b) => !b)} className="text-sm font-medium text-brand hover:underline">
-          {board ? 'Ocultar tablero' : `Tablero 1–${MAX_NUMBER}`}
+          {board ? 'Ocultar tablero' : `Tablero 1–${max}`}
         </button>
       </div>
 
@@ -61,10 +67,10 @@ export function CalledHistory({ called, relevant, onRemove, onCall, disabled }: 
 
       {board && (
         <div className="grid grid-cols-10 gap-1">
-          {Array.from({ length: MAX_NUMBER }, (_, i) => i + 1).map((n) => (
+          {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
             <button
               key={n}
-              disabled={disabled || calledSet.has(n)}
+              disabled={disabled || calledSet.has(n) || !allowed(n)}
               onClick={() => onCall(n)}
               className={`tabular aspect-square rounded-md text-xs font-semibold transition ${
                 calledSet.has(n) ? 'bg-brand text-white' : 'bg-surface-2 text-muted enabled:hover:bg-line enabled:hover:text-ink disabled:opacity-40'

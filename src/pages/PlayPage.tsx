@@ -10,7 +10,7 @@ import { PatternPreview } from '../components/PatternPreview'
 import { Button, Modal } from '../components/ui'
 import { buildIndex, evaluateAll, evaluateCard, hitsForNumber } from '../lib/bingo'
 import { canCall } from '../lib/guards'
-import { BUILTIN_PATTERNS } from '../lib/patterns'
+import { BUILTIN_PATTERNS, formatPrize } from '../lib/patterns'
 import { THEMES, nextTheme } from '../lib/themes'
 import { useBingoStore, usePattern } from '../store/useBingoStore'
 import type { Card } from '../types'
@@ -18,7 +18,7 @@ import type { Card } from '../types'
 type Toast = { id: number; tone: 'hit' | 'miss' | 'warn' | 'win'; title: string; detail?: string }
 
 export function PlayPage() {
-  const { cards, round, callNumber, undoLast, uncall, saveCard } = useBingoStore()
+  const { cards, round, callNumber, undoLast, uncall, saveCard, columnRule } = useBingoStore()
   const roundPattern = usePattern(round?.patternId)
   // solo como respaldo para los hooks; si la figura no existe se redirige más abajo
   const pattern = roundPattern ?? BUILTIN_PATTERNS[0]
@@ -61,7 +61,7 @@ export function PlayPage() {
     (n: number) => {
       setBuffer('')
       // validación en la UI y de nuevo dentro del store
-      const check = canCall(n, round, cards)
+      const check = canCall(n, round, cards, columnRule)
       const res = check.ok ? callNumber(n) : check
       if (!res.ok) return show({ tone: 'warn', title: 'No se puede cantar', detail: res.reason })
       const hits = hitsForNumber(index, pattern, n)
@@ -70,7 +70,7 @@ export function PlayPage() {
       if (inside.length) show({ tone: 'hit', title: `${n} ✓ en ${names.length} cartilla${names.length > 1 ? 's' : ''}`, detail: names.join(', ') })
       else show({ tone: 'miss', title: `${n}`, detail: hits.length ? `Está en ${hits.length} cartilla(s), pero fuera de la ${pattern.name}` : 'No aparece en ninguna cartilla' })
     },
-    [round, cards, callNumber, index, pattern, cardsById, show],
+    [round, cards, columnRule, callNumber, index, pattern, cardsById, show],
   )
 
   const submit = useCallback(() => buffer && call(Number(buffer)), [buffer, call])
@@ -98,6 +98,7 @@ export function PlayPage() {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Buscando</p>
             <p className="font-display text-3xl font-bold leading-none text-brand">{pattern.name}</p>
+            {pattern.prize != null && <p className="tabular mt-1 text-sm font-bold text-hit">Premio {formatPrize(pattern.prize)}</p>}
           </div>
           <Button size="sm" variant="ghost" onClick={() => navigate('/letter')}>
             Nueva ronda
@@ -149,7 +150,6 @@ export function PlayPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-2xl font-bold">
             Cartillas <span className="text-muted">({cards.length})</span>
-            {winners.length > 0 && <span className="ml-2 rounded-full bg-hit px-2.5 py-0.5 align-middle text-sm text-white">{winners.length} con BINGO</span>}
           </h2>
           <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
             + Agregar cartilla
@@ -165,6 +165,34 @@ export function PlayPage() {
           </button>
         )}
 
+        {/* ganadoras: sus nombres siempre a la vista, tocar lleva a la cartilla */}
+        <AnimatePresence>
+          {winners.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex flex-wrap items-center gap-2 rounded-3xl bg-hit p-3 text-white shadow-lg shadow-hit/30 sm:p-4"
+              aria-live="polite"
+            >
+              <p className="font-display text-xl font-bold sm:text-2xl">
+                🏆 ¡BINGO!{pattern.prize != null && <span className="tabular ml-2 opacity-90">{formatPrize(pattern.prize)}</span>}
+              </p>
+              <div className="flex flex-1 flex-wrap gap-1.5">
+                {winners.map((w) => (
+                  <button
+                    key={w.cardId}
+                    onClick={() => document.getElementById(`card-${w.cardId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                    className="rounded-full bg-white/20 px-3 py-1 font-display font-semibold transition hover:bg-white/30"
+                  >
+                    {cardsById.get(w.cardId)?.name}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-3">
           {evals.map((ev) => {
             const card = cardsById.get(ev.cardId)!
@@ -173,18 +201,33 @@ export function PlayPage() {
             return (
               <motion.article
                 key={card.id}
+                id={`card-${card.id}`}
                 layout
-                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                className={`relative flex flex-col gap-3 rounded-3xl bg-surface p-3 shadow-sm ring-2 sm:p-4 max-sm:gap-2 max-sm:rounded-2xl max-sm:p-2 ${ev.complete ? 'ring-hit shadow-lg shadow-hit/20' : 'ring-line'}`}
+                animate={ev.complete ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300, scale: { duration: 0.6 } }}
+                className={`relative flex flex-col gap-3 rounded-3xl p-3 sm:p-4 ${
+                  ev.complete
+                    ? 'col-span-2 bg-hit/10 shadow-xl shadow-hit/25 ring-4 ring-hit'
+                    : 'bg-surface shadow-sm ring-2 ring-line max-sm:gap-2 max-sm:rounded-2xl max-sm:p-2'
+                }`}
               >
                 <div className="flex items-center gap-2">
                   <span className={`size-3 shrink-0 rounded-full ${t.swatch}`} />
-                  <h3 className="flex-1 truncate font-display text-sm font-semibold sm:text-lg">{card.name}</h3>
+                  {ev.complete ? (
+                    <h3 className="flex flex-1 items-center gap-2 truncate font-display text-2xl font-bold text-hit sm:text-3xl">
+                      <span className="truncate">{card.name}</span>
+                      <span className="shrink-0 rounded-full bg-hit px-2.5 py-0.5 text-sm text-white">🏆 BINGO</span>
+                    </h3>
+                  ) : (
+                    <h3 className="flex-1 truncate font-display text-sm font-semibold sm:text-lg">{card.name}</h3>
+                  )}
                   <button onClick={() => setEditing(card)} className="rounded-lg px-2 py-1 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink">
                     Editar
                   </button>
                 </div>
-                <CardGrid card={card} mask={pattern.mask} called={calledSet} lastCalled={lastCalled} compact />
+                <div className={ev.complete ? 'mx-auto w-full max-w-md' : ''}>
+                  <CardGrid card={card} mask={pattern.mask} called={calledSet} lastCalled={lastCalled} compact={!ev.complete} />
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <div className="h-2 overflow-hidden rounded-full bg-surface-2">
                     <motion.div
@@ -193,7 +236,7 @@ export function PlayPage() {
                     />
                   </div>
                   {ev.complete ? (
-                    <p className="text-center font-display text-lg font-bold text-hit sm:text-2xl">¡BINGO! 🎉</p>
+                    <p className="text-center font-display text-2xl font-bold text-hit sm:text-3xl">¡{card.name} completó la {pattern.name}! 🎉</p>
                   ) : (
                     <p className="text-xs sm:text-sm">
                       <span className="font-semibold">

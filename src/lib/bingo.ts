@@ -1,5 +1,5 @@
-import type { Card, Cell, Pattern } from '../types'
-import { CELLS, CENTER, MAX_NUMBER } from './patterns'
+import type { Card, Cell, ColumnRange, ColumnRule, Pattern } from '../types'
+import { CELLS, CENTER, MAX_NUMBER, SIZE } from './patterns'
 
 export const emptyCells = (freeCenter = true): Cell[] =>
   Array.from({ length: CELLS }, (_, i) => (i === CENTER && freeCenter ? { value: null, free: true } : { value: null }))
@@ -64,23 +64,33 @@ export function hitsForNumber(index: ReturnType<typeof buildIndex>, pattern: Pat
   return (index.get(n) ?? []).map((h) => ({ ...h, inPattern: pattern.mask[h.index] }))
 }
 
-export type CardIssues = { duplicates: Set<number>; empty: number[]; outOfRange: number[] }
+export const inRange = (n: number, [min, max]: ColumnRange) => n >= min && n <= max
 
-export function validateCard(cells: Cell[]): CardIssues {
+/** Columna (0–4) que le corresponde a un número según la regla, o -1 si no cae en ninguna. */
+export const columnForNumber = (n: number, rule: ColumnRule) => rule.ranges.findIndex((r) => inRange(n, r))
+
+export type CardIssues = { duplicates: Set<number>; empty: number[]; outOfRange: number[]; wrongColumn: number[] }
+
+/** Con `rule` activa, además marca los números que no corresponden al rango de su columna. */
+export function validateCard(cells: Cell[], rule?: ColumnRule): CardIssues {
   const seen = new Map<number, number>()
   const empty: number[] = []
   const outOfRange: number[] = []
+  const wrongColumn: number[] = []
   cells.forEach((cell, i) => {
     if (cell.free) return
     if (cell.value == null) return void empty.push(i)
     if (cell.value < 1 || cell.value > MAX_NUMBER) outOfRange.push(i)
+    else if (rule?.enabled && !inRange(cell.value, rule.ranges[i % SIZE])) wrongColumn.push(i)
     seen.set(cell.value, (seen.get(cell.value) ?? 0) + 1)
   })
   const duplicates = new Set([...seen].filter(([, n]) => n > 1).map(([v]) => v))
-  return { duplicates, empty, outOfRange }
+  return { duplicates, empty, outOfRange, wrongColumn }
 }
 
 export const isCardValid = (cells: Cell[]) => {
   const v = validateCard(cells)
   return v.duplicates.size === 0 && v.empty.length === 0 && v.outOfRange.length === 0
 }
+
+export const breaksColumnRule = (cells: Cell[], rule: ColumnRule) => rule.enabled && validateCard(cells, rule).wrongColumn.length > 0

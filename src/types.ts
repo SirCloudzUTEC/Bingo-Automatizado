@@ -17,6 +17,8 @@ export type Pattern = {
   /** 25 booleanos, fila por fila */
   mask: boolean[]
   builtin: boolean
+  /** premio en soles al completar la figura */
+  prize?: number
 }
 
 export type Round = {
@@ -25,4 +27,13 @@ export type Round = {
   /** números cantados, en orden */
   called: number[]
   startedAt: number
+}
+
+/** [mínimo, máximo] permitido en una columna */
+export type ColumnRange = [number, number]
+
+/** Regla de columnas: un rango por columna B·I·N·G·O */
+export type ColumnRule = {
+  enabled: boolean
+  ranges: ColumnRange[]
 }

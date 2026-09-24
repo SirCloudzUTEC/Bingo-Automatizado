@@ -1,6 +1,6 @@
-import type { Card, Cell, Pattern, Round } from '../types'
-import { isCardValid } from './bingo'
-import { CELLS, CENTER, MAX_NUMBER } from './patterns'
+import type { Card, Cell, ColumnRule, Pattern, Round } from '../types'
+import { breaksColumnRule, columnForNumber, isCardValid } from './bingo'
+import { CELLS, CENTER, DEFAULT_COLUMN_RULE, HEADERS, MAX_NUMBER } from './patterns'
 
 /**
  * Reglas del juego en un solo lugar. La UI las usa para deshabilitar acciones
@@ -13,10 +13,11 @@ const fail = (reason: string): Check => ({ ok: false, reason })
 
 export const isValidNumber = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_NUMBER
 
-export function canCall(n: number, round: Round | null, cards: Card[]): Check {
+export function canCall(n: number, round: Round | null, cards: Card[], rule?: ColumnRule): Check {
   if (!round) return fail('No hay una ronda en curso')
   if (cards.length === 0) return fail('Agrega al menos una cartilla antes de cantar números')
   if (!isValidNumber(n)) return fail(`El número debe estar entre 1 y ${MAX_NUMBER}`)
+  if (rule?.enabled && columnForNumber(n, rule) === -1) return fail(`El ${n} no pertenece a ninguna columna según la regla`)
   if (round.called.includes(n)) return fail(`El ${n} ya fue cantado`)
   return ok
 }
@@ -34,9 +35,10 @@ const sameLayout = (a: Cell[], b: Cell[]) => a.every((c, i) => !!c.free === !!b[
 export const findIdenticalCard = (cells: Cell[], cards: Card[], excludeId?: string) =>
   cards.find((c) => c.id !== excludeId && sameLayout(c.cells, cells))
 
-export function canSaveCard(cells: Cell[], cards: Card[], excludeId?: string): Check {
+export function canSaveCard(cells: Cell[], cards: Card[], excludeId?: string, rule?: ColumnRule): Check {
   if (cells.length !== CELLS) return fail('La cartilla debe tener 25 celdas')
   if (!isCardValid(cells)) return fail('La cartilla tiene celdas vacías, repetidas o fuera de rango')
+  if (rule && breaksColumnRule(cells, rule)) return fail('Hay números que no corresponden al rango de su columna')
   const twin = findIdenticalCard(cells, cards, excludeId)
   if (twin) return fail(`Es idéntica a “${twin.name}”: ¿la registraste dos veces?`)
   return ok
@@ -57,6 +59,23 @@ export function canRemovePattern(pattern: Pattern | undefined, round: Round | nu
   return ok
 }
 
+export function canSetColumnRule(rule: ColumnRule): Check {
+  if (rule.ranges.length !== HEADERS.length) return fail('Debe haber un rango por columna')
+  for (const [c, [min, max]] of rule.ranges.entries()) {
+    if (!isValidNumber(min) || !isValidNumber(max)) return fail(`${HEADERS[c]}: usa números entre 1 y ${MAX_NUMBER}`)
+    if (min > max) return fail(`${HEADERS[c]}: el mínimo no puede ser mayor que el máximo`)
+    // cada columna necesita al menos 5 números distintos (4 en la N con centro libre)
+    if (max - min + 1 < 5) return fail(`${HEADERS[c]}: el rango necesita al menos 5 números`)
+  }
+  const sorted = rule.ranges.map((r, c) => ({ r, c })).sort((a, b) => a.r[0] - b.r[0])
+  for (let k = 1; k < sorted.length; k++) {
+    const prev = sorted[k - 1]
+    const cur = sorted[k]
+    if (cur.r[0] <= prev.r[1]) return fail(`Los rangos de ${HEADERS[prev.c]} y ${HEADERS[cur.c]} se superponen`)
+  }
+  return ok
+}
+
 // ---------- saneamiento de datos persistidos (localStorage editado o corrupto) ----------
 
 const sanitizeCell = (c: unknown, i: number): Cell => {
@@ -66,9 +85,9 @@ const sanitizeCell = (c: unknown, i: number): Cell => {
 }
 
 export function sanitizeState(
-  raw: { cards?: unknown; customPatterns?: unknown; round?: unknown },
+  raw: { cards?: unknown; customPatterns?: unknown; round?: unknown; columnRule?: unknown },
   builtins: Pattern[],
-): { cards: Card[]; customPatterns: Pattern[]; round: Round | null } {
+): { cards: Card[]; customPatterns: Pattern[]; round: Round | null; columnRule: ColumnRule } {
   const cards: Card[] = (Array.isArray(raw.cards) ? raw.cards : [])
     .filter((c): c is Card => !!c && typeof c.id === 'string' && Array.isArray(c.cells) && c.cells.length === CELLS)
     .map((c) => ({ ...c, name: String(c.name ?? 'Cartilla'), cells: c.cells.map(sanitizeCell) }))
@@ -84,5 +103,12 @@ export function sanitizeState(
       ? { ...r, called: [...new Set(r.called.filter(isValidNumber))] }
       : null
 
-  return { cards, customPatterns, round }
+  const cr = raw.columnRule as Partial<ColumnRule> | undefined
+  const candidate: ColumnRule | null =
+    cr && Array.isArray(cr.ranges) && cr.ranges.every((r) => Array.isArray(r) && r.length === 2)
+      ? { enabled: cr.enabled !== false, ranges: cr.ranges.map(([a, b]) => [a, b]) }
+      : null
+  const columnRule = candidate && canSetColumnRule(candidate).ok ? candidate : DEFAULT_COLUMN_RULE
+
+  return { cards, customPatterns, round, columnRule }
 }

@@ -1,9 +1,9 @@
 import { nanoid } from 'nanoid'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Card, Pattern, Round } from '../types'
-import { BUILTIN_PATTERNS } from '../lib/patterns'
-import { canCall, canRemovePattern, canSaveCard, canSavePattern, canStartRound, sanitizeState, type Check } from '../lib/guards'
+import type { Card, ColumnRule, Pattern, Round } from '../types'
+import { BUILTIN_PATTERNS, DEFAULT_COLUMN_RULE } from '../lib/patterns'
+import { canCall, canRemovePattern, canSaveCard, canSavePattern, canSetColumnRule, canStartRound, sanitizeState, type Check } from '../lib/guards'
 
 type CardInput = Omit<Card, 'id' | 'createdAt'>
 export type SaveResult = { ok: true; id: string } | { ok: false; reason: string }
@@ -12,6 +12,8 @@ type State = {
   cards: Card[]
   customPatterns: Pattern[]
   round: Round | null
+  columnRule: ColumnRule
+  setColumnRule: (rule: ColumnRule) => Check
   saveCard: (card: CardInput, id?: string) => SaveResult
   removeCard: (id: string) => void
   savePattern: (name: string, mask: boolean[], id?: string) => SaveResult
@@ -31,11 +33,17 @@ export const useBingoStore = create<State>()(
       cards: [],
       customPatterns: [],
       round: null,
+      columnRule: DEFAULT_COLUMN_RULE,
 
+      setColumnRule: (rule) => {
+        const check = canSetColumnRule(rule)
+        if (check.ok) set({ columnRule: { enabled: rule.enabled, ranges: rule.ranges.map(([a, b]) => [a, b]) } })
+        return check
+      },
       // Cada acción revalida con las mismas reglas que usa la UI (lib/guards).
       saveCard: (input, id) => {
         const existing = id ? get().cards.find((c) => c.id === id) : undefined
-        const check = canSaveCard(input.cells, get().cards, existing?.id)
+        const check = canSaveCard(input.cells, get().cards, existing?.id, get().columnRule)
         if (!check.ok) return check
         if (existing) {
           set((s) => ({ cards: s.cards.map((c) => (c.id === existing.id ? { ...c, ...input } : c)) }))
@@ -72,8 +80,8 @@ export const useBingoStore = create<State>()(
       },
       endRound: () => set({ round: null }),
       callNumber: (n) => {
-        const { round, cards } = get()
-        const check = canCall(n, round, cards)
+        const { round, cards, columnRule } = get()
+        const check = canCall(n, round, cards, columnRule)
         if (check.ok) set({ round: { ...round!, called: [...round!.called, n] } })
         return check
       },
@@ -92,7 +100,7 @@ export const useBingoStore = create<State>()(
     {
       name: 'bingo-gemelo',
       version: 1,
-      partialize: ({ cards, customPatterns, round }) => ({ cards, customPatterns, round }),
+      partialize: ({ cards, customPatterns, round, columnRule }) => ({ cards, customPatterns, round, columnRule }),
       // si localStorage trae datos corruptos o editados a mano, se descartan en vez de romper la app
       merge: (persisted, current) => ({ ...current, ...sanitizeState((persisted ?? {}) as object, BUILTIN_PATTERNS) }),
     },
