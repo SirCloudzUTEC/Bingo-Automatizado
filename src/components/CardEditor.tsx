@@ -27,6 +27,8 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
   const [order, setOrder] = useState<ParseOrder>('columns')
   const [bulk, setBulk] = useState<string | null>(null)
   const inputs = useRef<(HTMLInputElement | null)[]>([])
+  // evita doble salto si tras un auto-avance se pulsa espacio/Enter como separador
+  const autoAdvanced = useRef(false)
 
   const freeCenter = !!cells[CENTER].free
   const issues = useMemo(() => validateCard(cells), [cells])
@@ -48,11 +50,17 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
   const onInput = (i: number, raw: string) => {
     const digits = raw.replace(/\D/g, '').slice(0, 2)
     setValue(i, digits ? Number(digits) : null)
+    autoAdvanced.current = false
     // auto-avance: 2 dígitos, o 1 dígito que no puede crecer dentro del rango
-    if (digits.length === 2 || (digits.length === 1 && Number(digits) * 10 > MAX_NUMBER)) step(i, 1)
+    if (digits.length === 2 || (digits.length === 1 && Number(digits) * 10 > MAX_NUMBER)) {
+      step(i, 1)
+      autoAdvanced.current = true
+    }
   }
 
   const onKey = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
+    const skip = autoAdvanced.current && cells[i].value == null
+    autoAdvanced.current = false
     const row = Math.floor(i / SIZE)
     const col = i % SIZE
     const move = (r: number, c: number) => {
@@ -65,8 +73,10 @@ export function CardEditor({ initial, defaultName, defaultTheme, onSave, onCance
     switch (e.key) {
       case 'Enter':
       case ' ':
+      case ',':
         e.preventDefault()
-        return step(i, 1)
+        if (!skip) step(i, 1)
+        return
       case 'Backspace':
         if (cells[i].value == null) {
           e.preventDefault()
