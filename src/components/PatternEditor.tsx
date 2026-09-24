@@ -46,9 +46,14 @@ export function PatternEditor({ initialName = '', initialMask, patterns, editing
         <span>
           {count} celdas {mask[CENTER] && '· incluye centro'}
         </span>
-        <button type="button" className="font-medium text-brand hover:underline" onClick={() => setMask(emptyMask())}>
-          Limpiar
-        </button>
+        <div className="flex gap-3">
+          <button type="button" className="font-medium text-brand hover:underline" onClick={() => setMask(emptyMask().fill(true))}>
+            Llenar todo
+          </button>
+          <button type="button" className="font-medium text-brand hover:underline" onClick={() => setMask(emptyMask())}>
+            Limpiar
+          </button>
+        </div>
       </div>
       {!check.ok && (name.trim() || count > 0) && <p className="text-sm text-amber-500">⚠ {check.reason}</p>}
       {saveError && <p className="text-sm text-red-500">No se pudo guardar: {saveError}</p>}
